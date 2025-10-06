@@ -1,6 +1,8 @@
 #include "ota.h"
 #include "secrets.h"
 
+#include "led.h"
+
 #include <WiFi.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
@@ -11,7 +13,7 @@
 
 #include <esp_coexist.h>
 
-constexpr TickType_t PERIOD = pdMS_TO_TICKS(1000);
+TickType_t PERIOD = pdMS_TO_TICKS(1000);
 
 String fwHash;
 static WiFiClient wifiClient;
@@ -44,8 +46,7 @@ void checkOTA() {
                 esp_http_client_set_header(evt->client, "If-None-Match", fwHash.c_str());
                 break;
             case HTTP_EVENT_ON_DATA:
-                // Turn off LEDs
-                digitalWrite(45, LOW);
+                fillDark();
                 break;
             default: break;
         }
@@ -83,6 +84,7 @@ void setupOTA() {
     } else {
         fwHash.clear();
     }
+    checkOTA();
     /*
     xTaskCreatePinnedToCore(
         OTATask,

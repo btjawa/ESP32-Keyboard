@@ -6,8 +6,8 @@
 #define MODE2 41
 #define MODE3 42
 enum class BootMode: uint8_t {
-    USB_KEYBOARD,
-    BLE_KEYBOARD,
+    KEYBOARD,
+    MACRO,
     METRONOME,
 };
 

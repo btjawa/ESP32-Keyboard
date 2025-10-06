@@ -10,7 +10,7 @@
 constexpr TickType_t PERIOD = pdMS_TO_TICKS(100);
 
 struct Knot { uint16_t mv; float pct; };
-static const Knot kSoc[22] {
+static constexpr Knot kSoc[22] {
     {4190,100},
     {4080,93},
     {4020,88},
@@ -34,12 +34,12 @@ static const Knot kSoc[22] {
     {3050,1},
     {3000,0},
 };
-static const uint8_t kSocLen = sizeof(kSoc) / sizeof(kSoc[0]);
+static constexpr uint8_t kSocLen = sizeof(kSoc) / sizeof(kSoc[0]);
 
 volatile BatStatus gBat; 
 
 static uint16_t readVolts() {
-    const uint8_t N = 8;
+    constexpr uint8_t N = 8;
     uint32_t sum = 0;
     uint32_t vmin = UINT32_MAX;
     uint32_t vmax = 0;
@@ -61,10 +61,10 @@ static uint16_t readVolts() {
 
 static uint8_t readPct(uint16_t mV) {
     if (mV >= kSoc[0].mv) {
-        return kSoc[0].mv;
+        return kSoc[0].pct;
     }
     if (mV <= kSoc[kSocLen - 1].mv) {
-        return kSoc[kSocLen - 1].mv;
+        return kSoc[kSocLen - 1].pct;
     }
 
     uint16_t lo = 0, hi = kSocLen - 1;

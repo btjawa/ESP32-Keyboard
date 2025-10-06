@@ -29,9 +29,41 @@ constexpr uint8_t LED_PLD_MAX = 63;
 
 constexpr TickType_t PERIOD = pdMS_TO_TICKS(4);
 
+bool gFillDark = false;
+
+void fillDark() {
+    gFillDark = true;
+    FastLED.clear(true);
+    FastLED.show();
+    pinMode(LED_ROW1, INPUT);
+    pinMode(LED_ROW2, INPUT);
+    pinMode(LED_ROW3, INPUT);
+    pinMode(LED_ROW4, INPUT);
+    pinMode(45, OUTPUT);
+    digitalWrite(45, LOW);
+}
+
+void restoreLED() {
+    pinMode(45, OUTPUT);
+    digitalWrite(45, HIGH);
+    pinMode(LED_ROW1, OUTPUT);
+    pinMode(LED_ROW2, OUTPUT);
+    pinMode(LED_ROW3, OUTPUT);
+    pinMode(LED_ROW4, OUTPUT);
+    FastLED.setBrightness(LED_BRT);
+    FastLED.setDither(true);
+    FastLED.setCorrection(TypicalLEDStrip);
+    FastLED.clear(true);
+    gFillDark = false;
+}
+
 static void LEDTask(void*) {
     TickType_t last = xTaskGetTickCount();
     for (;;) {
+        if (gFillDark) {
+            vTaskDelayUntil(&last, PERIOD);
+            continue;
+        }
         /* WAVING LIGHTS */
         for (auto col = 0; col < LED_COLS; ++col) {
             uint16_t phase = col * LED_PHASE;
@@ -67,17 +99,12 @@ static void LEDTask(void*) {
 }
 
 void setupLED() {
-    pinMode(45, OUTPUT);
-    digitalWrite(45, HIGH);
     FastLED.addLeds<WS2812B, LED_PLD, GRB>(led_pld, LED_PLDS);
     FastLED.addLeds<WS2812B, LED_ROW1, GRB>(led_rows[0], LED_COLS);
     FastLED.addLeds<WS2812B, LED_ROW2, GRB>(led_rows[1], LED_COLS);
     FastLED.addLeds<WS2812B, LED_ROW3, GRB>(led_rows[2], LED_COLS);
     FastLED.addLeds<WS2812B, LED_ROW4, GRB>(led_rows[3], LED_COLS);
-    FastLED.setBrightness(LED_BRT);
-    FastLED.setDither(true);
-    FastLED.setCorrection(TypicalLEDStrip);
-    FastLED.clear(true);
+    restoreLED();
     xTaskCreatePinnedToCore(
         LEDTask,
         "LEDTask",

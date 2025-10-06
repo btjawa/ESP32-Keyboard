@@ -4,29 +4,38 @@
 #include "mode.h"
 
 #include "ota.h"
+#include "led.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include "esp_sleep.h"
+#include "driver/gpio.h"
 
 #include <ESP32Encoder.h>
 
-const TickType_t PERIOD = pdMS_TO_TICKS(5);
+constexpr TickType_t SLEEP_TICKS = pdMS_TO_TICKS(5 * 60 * 1000);
+constexpr TickType_t PERIOD = pdMS_TO_TICKS(5);
 
-const uint8_t KeyMap[K_ROWS_LEN][K_COLS_LEN] = {
+constexpr uint8_t KeyMap[K_ROWS_LEN][K_COLS_LEN] = {
     { 0xE7, 0xE8, 0xE9, 0xB1, },
     { 0xE4, 0xE5, 0xE6, 0xDF, },
     { 0xE1, 0xE2, 0xE3, 0xDE, },
-    { 0xEA, 0xDD, 0xDC, 0xE0, },
+    { 0xEA, 0xEB, 0xB3, 0xE0, },
 };
 
 volatile bool gKeyPressed[K_ROWS_LEN][K_COLS_LEN] = {false};
 
 int64_t lastCount = 0;
 int8_t COUNTS_PER_DETENT = 2;
+TickType_t gLastTick = 0;
 
 #define ENC_A 39
 #define ENC_B 38
 ESP32Encoder encoder;
+
+void inline tick() {
+    gLastTick = xTaskGetTickCount();
+}
 
 void resetKeys() {
     for (uint8_t i = 0; i < K_ROWS_LEN; i++) pinMode(K_ROWS[i], INPUT);
@@ -82,10 +91,11 @@ void KeysTask(void*) {
                 uint8_t key = KeyMap[i][j];
                 if (i == 0 && j == 3 && prs) {
                     mute();
-                    checkOTA();
-                }
-                else if (prs) press(key);
-                else if (rls) release(key);
+                    tick();
+                } else if (prs) {
+                    press(key);
+                    tick();
+                } else if (rls) release(key);
                 gKeyPressed[i][j] = pressed;
             }
             pinMode(K_ROWS[i], INPUT);
@@ -94,6 +104,7 @@ void KeysTask(void*) {
         int64_t steps = (c - lastCount) / COUNTS_PER_DETENT;
 
         if (steps != 0) {
+            tick();
             lastCount += (int64_t)steps * COUNTS_PER_DETENT;
             auto n = (steps > 0) ? steps : -steps;
             for (int i = 0; i < n; ++i) {
@@ -103,6 +114,42 @@ void KeysTask(void*) {
         }
         resetKeys();
         vTaskDelayUntil(&lastWake, PERIOD);
+    }
+}
+
+void SleepTask(void*) {
+    const TickType_t interval = pdMS_TO_TICKS(1000);
+    TickType_t last = xTaskGetTickCount();
+    for (;;) {
+        if ((xTaskGetTickCount() - gLastTick) <= SLEEP_TICKS) {
+            vTaskDelayUntil(&last, interval);
+            continue;
+        }
+
+        /* SLEEP */
+        fillDark();
+        for (uint8_t i = 0; i < K_ROWS_LEN; ++i) {
+            pinMode(K_ROWS[i], OUTPUT);
+            digitalWrite(K_ROWS[i], HIGH);
+        }
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+        ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+        for (uint8_t j = 0; j < K_COLS_LEN; ++j) {
+            gpio_num_t pin = (gpio_num_t)K_COLS[j];
+            pinMode(pin, INPUT_PULLDOWN);
+            gpio_wakeup_enable(pin, GPIO_INTR_HIGH_LEVEL);
+        }
+        esp_light_sleep_start();
+        
+        /* AWAKE */
+        for (uint8_t j = 0; j < K_COLS_LEN; ++j) {
+            gpio_wakeup_disable((gpio_num_t)K_COLS[j]);
+        }
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+        resetKeys();
+        restoreLED();
+        tick();
+        vTaskDelayUntil(&last, interval);
     }
 }
 
@@ -118,12 +165,22 @@ void setupKeyboard() {
     encoder.attachFullQuad(ENC_A, ENC_B);
     encoder.clearCount();
     resetKeys();
+    tick();
     xTaskCreatePinnedToCore(
         KeysTask,
         "KeysTask",
         4096,
         nullptr,
         2,
+        nullptr,
+        APP_CPU_NUM
+    );
+    xTaskCreatePinnedToCore(
+        SleepTask,
+        "SleepTask",
+        3072,
+        nullptr,
+        1,
         nullptr,
         APP_CPU_NUM
     );
