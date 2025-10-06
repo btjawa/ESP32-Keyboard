@@ -9,46 +9,59 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <esp_coexist.h>
+
 constexpr TickType_t PERIOD = pdMS_TO_TICKS(1000);
 
 String fwHash;
 static WiFiClient wifiClient;
 
-static esp_err_t http_evt(esp_http_client_event_t* evt) {
-    switch (evt->event_id) {
-        case HTTP_EVENT_ON_CONNECTED:
-            esp_http_client_set_header(evt->client, "If-None-Match", fwHash.c_str());
-            break;
-        case HTTP_EVENT_ON_DATA:
-            // Turn off LEDs
-            digitalWrite(45, LOW);
-            break;
-        default: break;
-    }
-    return ESP_OK;
-}
-
 void checkOTA() {
+    WiFi.persistent(false);
+    WiFi.setSleep(true);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(SSID, PASS);
+    uint32_t start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
     if (WiFi.status() != WL_CONNECTED) {
-        WiFi.mode(WIFI_STA);
-        WiFi.persistent(false);
-        WiFi.setSleep(true);
-        WiFi.begin(SSID, PASS);
-        uint32_t start = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
-            vTaskDelay(pdMS_TO_TICKS(200));
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+        return;
+    }
+
+    // Prefer WiFi
+    esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
+
+    esp_http_client_config_t http_cfg = {};
+    http_cfg.url               = OTA_URL;
+    http_cfg.timeout_ms        = 2000;
+    http_cfg.cert_pem          = OTA_CERT_PEM;
+    http_cfg.event_handler     = [](esp_http_client_event_t* evt) -> esp_err_t {
+        switch (evt->event_id) {
+            case HTTP_EVENT_ON_CONNECTED:
+                esp_http_client_set_header(evt->client, "If-None-Match", fwHash.c_str());
+                break;
+            case HTTP_EVENT_ON_DATA:
+                // Turn off LEDs
+                digitalWrite(45, LOW);
+                break;
+            default: break;
         }
-    } else {
-        esp_http_client_config_t http_cfg = {};
-        http_cfg.url               = OTA_URL;
-        http_cfg.timeout_ms        = 2500;
-        http_cfg.event_handler     = http_evt;
-        http_cfg.cert_pem          = OTA_CERT_PEM;
-    
-        esp_err_t ret = esp_https_ota(&http_cfg);
-        if (ret == ESP_OK) {
-            esp_restart();
-        }
+        return ESP_OK;
+    };
+
+    esp_err_t ret = esp_https_ota(&http_cfg);
+
+    // Invert preference
+    esp_coex_preference_set(ESP_COEX_PREFER_BALANCE);
+
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+
+    if (ret == ESP_OK) {
+        esp_restart();
     }
 }
 

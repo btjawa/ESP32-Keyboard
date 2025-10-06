@@ -61,6 +61,13 @@ void decVol() {
         ble_hid::write(KEY_MEDIA_VOLUME_DOWN);
 }
 
+void mute() {
+    if (gBootMode == BootMode::USB_KEYBOARD)
+        usb_hid::write(0x00E2);
+    else if (gBootMode == BootMode::BLE_KEYBOARD)
+        ble_hid::write(KEY_MEDIA_MUTE);
+}
+
 void KeysTask(void*) {
     TickType_t lastWake = xTaskGetTickCount();
     for (;;) {
@@ -70,14 +77,15 @@ void KeysTask(void*) {
             delayMicroseconds(10);
             for (uint8_t j = 0; j < K_COLS_LEN; j++) {
                 bool pressed = (digitalRead(K_COLS[j]) == HIGH);
-                bool wasPressed = gKeyPressed[i][j];
+                bool prs = pressed && !gKeyPressed[i][j];
+                bool rls = !pressed && gKeyPressed[i][j];
                 uint8_t key = KeyMap[i][j];
-                if (pressed && !wasPressed) {
-                    press(key);
-                } else if (!pressed && wasPressed) {
-                    release(key);
-                    if (i == 0 && j == 3) checkOTA();
+                if (i == 0 && j == 3 && prs) {
+                    mute();
+                    checkOTA();
                 }
+                else if (prs) press(key);
+                else if (rls) release(key);
                 gKeyPressed[i][j] = pressed;
             }
             pinMode(K_ROWS[i], INPUT);

@@ -1,5 +1,6 @@
 #include "led.h"
 #include "keyboard.h"
+#include "mode.h"
 
 #include <FastLED.h>
 #include <freertos/FreeRTOS.h>
@@ -17,33 +18,34 @@ CRGB led_pld[7];
 #define LED_COLS 4
 CRGB led_rows[LED_ROWS][LED_COLS];
 
-#define LED_BRT 60
-#define LED_BPM 30
-#define LED_PHASE 32
-#define LED_MIN 32
-#define LED_MAX 128
-#define LED_PLD_MIN 16
-#define LED_PLD_MAX 32
+#define LED_BRT 30
+#define LED_BPM 45
 
-constexpr TickType_t PERIOD = pdMS_TO_TICKS(16);
+constexpr uint16_t LED_PHASE = 32 * 256;
+constexpr uint16_t LED_MIN = 63 * 256;
+constexpr uint16_t LED_MAX = 255 * 256;
+constexpr uint8_t LED_PLD_MIN = 31;
+constexpr uint8_t LED_PLD_MAX = 63;
+
+constexpr TickType_t PERIOD = pdMS_TO_TICKS(4);
 
 static void LEDTask(void*) {
     TickType_t last = xTaskGetTickCount();
     for (;;) {
         /* WAVING LIGHTS */
-        for (uint8_t col = 0; col < LED_COLS; ++col) {
-            const uint8_t phase = col * LED_PHASE;
-            uint8_t level = beatsin8(LED_BPM, LED_MIN, LED_MAX, 0, phase);
-            for (uint8_t row = 0; row < LED_ROWS; ++row) {
+        for (auto col = 0; col < LED_COLS; ++col) {
+            uint16_t phase = col * LED_PHASE;
+            uint16_t level = beatsin16(LED_BPM, LED_MIN, LED_MAX, 0, phase);
+            for (auto row = 0; row < LED_ROWS; ++row) {
                 CRGB c = CRGB(0x00, 0xBC, 0xD4);
-                c.nscale8_video(level);
+                c.nscale8_video(level >> 8);
                 led_rows[row][col] = c;
             }
         }
 
         /* KEYS HIGHLIGHTING LIGHTS */
-        for (uint8_t row = 0; row < LED_ROWS; ++row) {
-            for (uint8_t col = 0; col < LED_COLS; ++col) {
+        for (auto row = 0; row < LED_ROWS; ++row) {
+            for (auto col = 0; col < LED_COLS; ++col) {
                 if (gKeyPressed[row][col]) {
                     CRGB c = CRGB(0x00, 0xBC, 0xD4);
                     led_rows[row][col] = c;
@@ -52,13 +54,12 @@ static void LEDTask(void*) {
         }
         
         /* PLD LIGHTS */
-        for (uint8_t i = 1; i <= 3; ++i) {
-            const uint8_t phase = i * LED_PHASE;
-            uint8_t level = beatsin8(LED_BPM, LED_PLD_MIN, LED_PLD_MAX, 0, phase);
-            CRGB c = CRGB(0x00, 0xBC, 0xD4);
-            c.nscale8_video(level);
-            led_pld[i] = c;
-        }
+        uint8_t m = (uint8_t)(gBootMode) + 1;
+        uint8_t t = (uint8_t)((beat16(LED_BPM) + 16384 + 0x80) >> 8);
+        uint8_t level = scale8_video(LED_PLD_MAX, 255 - t);
+        CRGB c = CRGB(0x00, 0xBC, 0xD4);
+        c.nscale8_video(level);
+        led_pld[m] = c;
 
         FastLED.show();
         vTaskDelayUntil(&last, PERIOD);
@@ -74,8 +75,8 @@ void setupLED() {
     FastLED.addLeds<WS2812B, LED_ROW3, GRB>(led_rows[2], LED_COLS);
     FastLED.addLeds<WS2812B, LED_ROW4, GRB>(led_rows[3], LED_COLS);
     FastLED.setBrightness(LED_BRT);
+    FastLED.setDither(true);
     FastLED.setCorrection(TypicalLEDStrip);
-    FastLED.setMaxRefreshRate(120, true);
     FastLED.clear(true);
     xTaskCreatePinnedToCore(
         LEDTask,
