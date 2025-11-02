@@ -1,9 +1,10 @@
 #pragma once
-#include <Arduino.h>
+
+#include <cstdint>
 
 namespace usb_hid {
-    void setup();
+    void setup(char serial_str[17]);
+    void end();
     void press(const uint8_t key);
-    void write(uint16_t usage);
     void release(const uint8_t key);
 }

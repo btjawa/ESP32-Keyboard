@@ -1,11 +1,10 @@
 #pragma once
-#include <Arduino.h>
 
-#include <BleKeyboard.h>
+#include <cstdint>
 
 namespace ble_hid {
-    void setup();
+    void setup(char serial_str[17]);
+    void end();
     void press(const uint8_t key);
-    void write(const MediaKeyReport& key);
     void release(const uint8_t key);
 }
